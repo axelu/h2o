@@ -1,0 +1,11 @@
+name: 'build h2o on Alpine'
+description: 'build h2o on Alpine'
+inputs:
+  make-step:
+    description: 'make step'
+    required: false
+runs:
+  using: 'docker'
+  image: 'Dockerfile'  
+  args:
+    - ${{ inputs.make-step }}

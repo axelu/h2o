@@ -1,0 +1,61 @@
+name: Alpine
+on:
+  push:
+    branches:
+      - 'alpine'
+      - 'master'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: build
+        uses: ./.github/actions/alpine
+      - name: build checkdependencies
+        uses: ./.github/actions/alpine
+        with:
+          make-step: 'buildcheckdependencies'
+      - name: tar build dir
+        if: ${{ success() }}
+        run: tar cvzf build.tar.gz build
+      - name: upload build dir tar
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: builddirtar
+          path: build.tar.gz
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-batch: [batch-1, batch-2, batch-3, batch-4, batch-5, batch-6, batch-7, -batch-8]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: download build dir tar
+        uses: actions/download-artifact@v2
+        with:
+          name: builddirtar
+      - name: untar build dir tar
+        run: tar xvzf build.tar.gz
+      - name: execute tests 
+        uses: ./.github/actions/alpine
+        with:
+          make-step: ${{ matrix.test-batch }}
+  clean:
+    needs: [build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: delete build dir tar
+        if: needs.build.result == 'success'
+        uses: geekyeggo/delete-artifact@v1
+        with:
+          name: builddirtar
