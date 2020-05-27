@@ -1,4 +1,9 @@
 language: c
+branches:
+  except:
+  - master
+  - alpine
+  - travisci2githubactions
 matrix:
   include:
     - os: linux
