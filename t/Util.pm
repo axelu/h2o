@@ -141,7 +141,7 @@ sub spawn_server {
                 if (waitpid($pid, WNOHANG) == $pid) {
                     die "server failed to start (got $?)\n";
                 }
-                sleep 0.1;
+                sleep 3;
             }
         }
         my $guard = scope_guard(sub {
@@ -300,17 +300,20 @@ sub run_with_curl {
     subtest "http/1" => sub {
         $cb->("http", $server->{port}, "curl", 257);
     };
+    sleep 0.1;
     subtest "https/1" => sub {
         my $cmd = "curl --insecure";
         $cmd .= " --http1.1"
             if curl_supports_http2();
         $cb->("https", $server->{tls_port}, $cmd, 257);
     };
+    sleep 0.1;
     subtest "https/2" => sub {
         plan skip_all => "curl does not support HTTP/2"
             unless curl_supports_http2();
         $cb->("https", $server->{tls_port}, "curl --insecure --http2", 512);
     };
+    sleep 0.1;
 }
 
 sub h2get_exists {
