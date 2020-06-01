@@ -66,7 +66,12 @@ EOT
                 my ($proto, $port, $curl) = @_;
                 plan skip_all => "skip due to curl bug #659"
                     if $curl =~ /--http2/;
-                my $content = `$curl --silent --show-error -H foo:@{["0123456789"x7000]} $proto://127.0.0.1:$port/echo-headers`;
+                my $content;
+                if ($curl =~ /--http1.1/) {
+                    $content = `wget --no-check-certificate -O - --header="foo:@{["0123456789"x7000]}" https://127.0.0.1:$port/echo-headers`;
+                } else {
+                    $content = `$curl --silent --show-error -H foo:@{["0123456789"x7000]} $proto://127.0.0.1:$port/echo-headers`;
+                }
                 like $content, qr/^foo: (0123456789){7000,7000}$/mi;
                 if ($proto eq 'https') {
                     like $content, qr/^https: on$/m;
