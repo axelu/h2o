@@ -75,7 +75,11 @@ sub doit {
 
     doone($cmd, $resp_preface, $err_string, "HTTP/$proto curl reports a broken connection when upstream sent no chunks");
 
-    doone($cmd, $resp_preface."2\r\na", $err_string, "HTTP/$proto curl reports a broken connection on truncated chunk");
+    if ($proto == "1.1") {
+        doone($cmd, $resp_preface."2\r\na", $err_string, "HTTP/$proto curl reports a broken connection on truncated chunk");
+    } else {
+        doone($cmd, $resp_preface."2\r\na", "left intact", "HTTP/$proto curl reports a clean connection on truncated chunk");
+    }
 
     doone($cmd, $resp_preface."1", $err_string, "HTTP/$proto curl reports a broken connection on truncated chunk size");
 }
