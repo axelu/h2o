@@ -1,0 +1,15 @@
+name: 'build h2oe'
+description: 'build h2o'
+inputs:
+  exec-env:
+    description: 'execution environment'
+    required: false
+  make-step:
+    description: 'make step'
+    required: false
+runs:
+  using: 'docker'
+  image: 'netexamp1eh2o:netexamp1eh2o'
+  args:
+    - ${{ inputs.exec-env }}
+    - ${{ inputs.make-step }}

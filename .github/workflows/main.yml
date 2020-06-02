@@ -1,23 +1,164 @@
-name: CIFuzz
-on: [pull_request]
+name: Main
+on:
+  push:
+    branches:
+      - 'travisci2githubactions'
 jobs:
-  Fuzzing:
+  builddkrimg:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        df: [h2ocilatest, h2ociu1904]
+        include:
+          - df: h2ociu1904
+            dfspec: kazuhoh2ociubuntu1904
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: prepare Dockerfile
+        run: ./.github/actions/main/preparedf.sh ${{ matrix.dfspec }}
+      - name: build docker image
+        run: /usr/bin/docker build -t netexamp1eh2o:netexamp1eh2o -f "/home/runner/work/h2o/h2o/./.github/actions/main/Dockerfile" "/home/runner/work/h2o/h2o/.github/actions/main"
+      - name: docker save
+        if: ${{ success() }}
+        run: docker save --output h2odkrimg${{ matrix.dfspec }}.tar netexamp1eh2o:netexamp1eh2o
+      - name: deflate docker image
+        if: ${{ success() }}
+        run: gzip h2odkrimg${{ matrix.dfspec }}.tar
+      - name: upload docker image
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: h2odkrimg${{ matrix.dfspec }}
+          path: h2odkrimg${{ matrix.dfspec }}.tar.gz
+  build:
+    needs: builddkrimg
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build-env: [default, ossl110, ossl111, fuzz, dtrace]
+        include:
+          - build-env: dtrace
+            dfspec: kazuhoh2ociubuntu1904
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: download docker image
+        uses: actions/download-artifact@v2
+        with:
+          name: h2odkrimg${{ matrix.dfspec }}
+      - name: inflate docker image
+        run: gunzip h2odkrimg${{ matrix.dfspec }}.tar.gz
+      - name: docker load
+        run: docker image load --input h2odkrimg${{ matrix.dfspec }}.tar
+      - name: make
+        if: ${{ success() }}
+        uses: ./.github/actions/main
+        with:
+          exec-env: ${{ matrix.build-env }}
+      - name: make checkdepends
+        if: ${{ success() }}
+        uses: ./.github/actions/main
+        with:
+          exec-env: ${{ matrix.build-env }}
+          make-step: 'buildcheckdependencies'
+      - name: tar build dir
+        if: ${{ success() }}
+        run: tar cvzf build${{ matrix.build-env }}.tar.gz build
+      - name: upload build dir tar
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: builddirtar${{ matrix.build-env }}
+          path: build${{ matrix.build-env }}.tar.gz
+  test:
+    needs: [builddkrimg, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build-env: [default, ossl110, ossl111, fuzz, dtrace]
+        test-batch: [batch-1, batch-2, batch-3, batch-4, batch-5, batch-6, batch-7, batch-8]
+        include:
+          - build-env: dtrace
+            dfspec: kazuhoh2ociubuntu1904
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: download build dir tar
+        uses: actions/download-artifact@v2
+        with:
+          name: builddirtar${{ matrix.build-env }}
+      - name: untar build dir tar
+        run: tar xvzf build${{ matrix.build-env }}.tar.gz
+      - name: download docker image
+        uses: actions/download-artifact@v2
+        with:
+          name: h2odkrimg${{ matrix.dfspec }}
+      - name: inflate docker image
+        run: gunzip h2odkrimg${{ matrix.dfspec }}.tar.gz
+      - name: docker load
+        run: docker image load --input h2odkrimg${{ matrix.dfspec }}.tar
+      - name: execute tests
+        run: /usr/bin/docker run --privileged --workdir /github/workspace --rm -v "/sys/kernel/debug":"/sys/kernel/debug" -v "/var/run/docker.sock":"/var/run/docker.sock" -v "/home/runner/work/h2o/h2o":"/github/workspace" netexamp1eh2o:netexamp1eh2o  "${{ matrix.build-env }}" "${{ matrix.test-batch }}"
+  fuzz-extra:
+    needs: [builddkrimg, build]
     runs-on: ubuntu-latest
     steps:
-    - name: Build Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'h2o'
-        dry-run: false
-    - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'h2o'
-        fuzz-seconds: 600
-        dry-run: false
-    - name: Upload Crash
-      uses: actions/upload-artifact@v1
-      if: failure()
-      with:
-        name: artifacts
-        path: ./out/artifacts
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: download build dir tar
+        uses: actions/download-artifact@v2
+        with:
+          name: builddirtarfuzz
+      - name: untar build dir tar
+        run: tar xvzf buildfuzz.tar.gz
+      - name: download docker image
+        uses: actions/download-artifact@v2
+        with:
+          name: h2odkrimg
+      - name: inflate docker image
+        run: gunzip h2odkrimg.tar.gz
+      - name: docker load
+        run: docker image load --input h2odkrimg.tar
+      - name: execute tests
+        uses: ./.github/actions/main
+        with:
+          exec-env: 'fuzz'
+          make-step: 'fuzz-extra'
+  purgebuilddirtar:
+    needs: [builddkrimg, build, test, fuzz-extra]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build-env: [default, ossl110, ossl111, fuzz, dtrace]
+    steps:
+      - name: delete build dir tar
+        uses: geekyeggo/delete-artifact@v1
+        if: needs.build.result == 'success'
+        with:
+          name: builddirtar${{ matrix.build-env }}
+  purgedockerimg:
+    needs: [builddkrimg, build, test, fuzz-extra]
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        df: [h2ocilatest, h2ociu1904]
+        include:
+          - df: h2ociu1904
+            dfspec: kazuhoh2ociubuntu1904
+    steps:
+      - name: delete docker image
+        if: needs.builddkrimg.result == 'success'
+        uses: geekyeggo/delete-artifact@v1
+        with:
+          name: h2odkrimg${{ matrix.dfspec }}
